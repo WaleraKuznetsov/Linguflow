@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "shadcn-ui": {
+      "command": "npx",
+      "args": ["-y", "@jpisnice/shadcn-ui-mcp-server"],
+      "cwd": "c:\\Users\\Валера\\Desktop\\МДП проект\\pr2\\linguflow",
+      "env": {}
+    },
+    "linguflow-dictionary": {
+      "command": "node",
+      "args": ["mcp/dictionary-server.js"],
+      "cwd": "c:\\Users\\Валера\\Desktop\\МДП проект\\pr2\\linguflow",
+      "env": {}
+    }
+  }
+}
