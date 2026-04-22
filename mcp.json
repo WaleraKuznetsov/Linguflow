@@ -11,6 +11,29 @@
       "args": ["mcp/dictionary-server.js"],
       "cwd": "c:\\Users\\Валера\\Desktop\\МДП проект\\pr2\\linguflow",
       "env": {}
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server_filesystem", "c:\\Users\\Валера\\Desktop\\МДП проект\\pr2\\linguflow"]
+    },
+    "todo": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server_todo"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server_memory"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": ["-y", "sequential-thinking-mcp"]
+    },
+    "supabase": {
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "sbp_637842d89a89b9e93de9c2c1582988e35097de83"
+      }
     }
   }
 }
