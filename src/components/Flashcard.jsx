@@ -7,30 +7,56 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/comp
 import { cn } from '@/lib/utils';
 
 const RATING_BUTTONS = [
-  { label: 'Снова', rating: 0, variant: 'destructive', hint: 'Не вспомнили — повтор завтра' },
-  { label: 'Трудно', rating: 1, variant: 'outline', hint: 'Вспомнили с трудом' },
-  { label: 'Хорошо', rating: 2, variant: 'default', hint: 'Вспомнили легко — через неск. дней' },
-  { label: 'Легко', rating: 3, variant: 'secondary', hint: 'Знали сразу — долгий интервал' }
+  { label: 'Снова', rating: 0, variant: 'destructive', hint: 'Не вспомнили — повтор завтра', color: 'destructive' },
+  { label: 'Трудно', rating: 1, variant: 'outline', hint: 'Вспомнили с трудом', color: 'amber' },
+  { label: 'Хорошо', rating: 2, variant: 'default', hint: 'Вспомнили легко — через неск. дней', color: 'primary' },
+  { label: 'Легко', rating: 3, variant: 'secondary', hint: 'Знали сразу — долгий интервал', color: 'primary' }
 ];
 
 const Flashcard = ({ card, onRate }) => {
   const [isFlipped, setIsFlipped] = useState(false);
+  const [swiping, setSwiping] = useState(null);
+  const [flashColor, setFlashColor] = useState(null);
 
   const handleFlip = () => setIsFlipped(!isFlipped);
 
   const handleRate = (e, rating) => {
     e.stopPropagation();
-    setIsFlipped(false);
-    onRate(rating);
+
+    const button = RATING_BUTTONS.find(b => b.rating === rating);
+    const direction = rating >= 2 ? 'right' : 'left';
+
+    setFlashColor(button.color);
+    setSwiping(direction);
+
+    setTimeout(() => {
+      setSwiping(null);
+      setFlashColor(null);
+      setIsFlipped(false);
+      onRate(rating);
+    }, 350);
   };
 
   return (
-    <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto h-[480px] perspective-1000">
+    <div className="flex flex-col items-center justify-center w-full max-w-md mx-auto h-[480px] perspective-1000 relative">
+      {flashColor && (
+        <div
+          className={cn(
+            "absolute inset-0 rounded-2xl z-10 animate-pulse pointer-events-none",
+            flashColor === 'destructive' && 'bg-destructive/20',
+            flashColor === 'amber' && 'bg-amber-500/15',
+            flashColor === 'primary' && 'bg-primary/15'
+          )}
+        />
+      )}
+
       <div
         onClick={handleFlip}
         className={cn(
           "relative w-full h-full transition-all duration-500 transform-style-3d cursor-pointer",
-          isFlipped ? 'rotate-y-180' : ''
+          isFlipped ? 'rotate-y-180' : '',
+          swiping === 'right' && 'translate-x-[120%] opacity-0 rotate-6',
+          swiping === 'left' && '-translate-x-[120%] opacity-0 -rotate-6'
         )}
       >
         <Card className="absolute inset-0 flex flex-col items-center justify-center p-8 bg-card border-2 border-primary/20 shadow-2xl backface-hidden h-full">
@@ -58,7 +84,7 @@ const Flashcard = ({ card, onRate }) => {
 
       <div className={cn(
         "flex gap-2 mt-8 w-full transition-all duration-300",
-        isFlipped ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
+        isFlipped && !swiping ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'
       )}>
         <TooltipProvider delay={500}>
           {RATING_BUTTONS.map((item) => (

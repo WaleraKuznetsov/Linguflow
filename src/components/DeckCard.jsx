@@ -1,10 +1,13 @@
-import { Layers, Trash2, Edit3, Brain, RefreshCw } from 'lucide-react';
+import { Layers, Trash2, Edit3, Brain, RefreshCw, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
-const DeckCard = ({ deck, onStudy, onReview, onManage, onDelete }) => {
+const DeckCard = ({ deck, progress, onStudy, onReview, onManage, onDelete }) => {
+  const p = progress || { total: deck.cards.length, learned: 0, dueToday: 0, percent: 0 };
+
   return (
     <Card className="group relative overflow-hidden border border-border shadow-sm hover:shadow-md dark:shadow-none transition-all duration-300 hover:-translate-y-1 bg-card hover:border-primary/50">
       <CardHeader className="pb-4">
@@ -37,12 +40,33 @@ const DeckCard = ({ deck, onStudy, onReview, onManage, onDelete }) => {
           {deck.description || 'Пользовательская колода'}
         </CardDescription>
       </CardHeader>
-      <CardContent className="pb-4">
-        <div className="flex items-center gap-2">
+      <CardContent className="pb-3 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="secondary" className="bg-accent text-accent-foreground font-bold px-3 py-1">
-            {deck.cards.length} слов
+            {p.total} слов
           </Badge>
+          {p.dueToday > 0 && (
+            <Badge variant="outline" className="font-bold px-3 py-1 text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+              <AlertCircle size={12} className="mr-1" />
+              {p.dueToday} на повтор.
+            </Badge>
+          )}
         </div>
+        <div>
+            <div className="flex justify-between mb-1">
+              <span className="text-xs font-bold text-muted-foreground">Изучено</span>
+              <span className="text-xs font-black text-primary">{p.percent}%</span>
+            </div>
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-500",
+                  p.percent >= 80 ? "bg-emerald-500" : p.percent >= 40 ? "bg-primary" : "bg-primary/60"
+                )}
+                style={{ width: `${p.percent}%` }}
+              />
+            </div>
+          </div>
       </CardContent>
       <CardFooter className="flex gap-2 pt-0">
         <Button 
@@ -79,7 +103,7 @@ const DeckCard = ({ deck, onStudy, onReview, onManage, onDelete }) => {
               </Button>
             </TooltipTrigger>
             <TooltipContent>Редактировать</TooltipContent>
-          </Tooltip>
+            </Tooltip>
         </TooltipProvider>
       </CardFooter>
     </Card>

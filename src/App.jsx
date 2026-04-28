@@ -25,7 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { fetchProfile, upsertProfile } from '@/lib/db';
+import { fetchProfile, upsertProfile, incrementStatistics, fetchAllDecksProgress } from '@/lib/db';
 
 export default function App() {
   const { user, loading, signOut } = useAuth();
@@ -43,14 +43,21 @@ export default function App() {
   const [newBack, setNewBack] = useState('');
   const [profile, setProfile] = useState(null);
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+  const [cardsRated, setCardsRated] = useState(0);
+  const [studyStartTime, setStudyStartTime] = useState(null);
+  const [cardStartTime, setCardStartTime] = useState(null);
+  const [deckProgress, setDeckProgress] = useState({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [studyDuration, setStudyDuration] = useState(0);
 
   const activeDeck = decks?.find(d => d.id === activeDeckId);
 
   useEffect(() => {
     if (user) {
       fetchProfile(user.id).then(p => setProfile(p));
+      fetchAllDecksProgress(user.id).then(dp => setDeckProgress(dp));
     }
-  }, [user?.id]);
+  }, [user?.id, decks?.length]);
 
   const handleSaveProfile = async (updates) => {
     const { data, error } = await upsertProfile(user.id, updates);
@@ -71,16 +78,22 @@ export default function App() {
   };
 
   const startStudy = async (deckId, mode) => {
+    const startTime = new Date().getTime();
     setActiveDeckId(deckId);
     setStudyMode(mode);
     setCurrentCardIndex(0);
+    setCardsRated(0);
+    setStudyStartTime(startTime);
+    setCardStartTime(startTime);
+    setStudyDuration(0);
 
     if (mode === 'review') {
       const dueCards = await fetchDueCardsForDeck(deckId);
       setStudyCards(dueCards);
     } else {
       const deck = decks?.find(d => d.id === deckId);
-      setStudyCards(deck?.cards || []);
+      const shuffled = [...(deck?.cards || [])].sort(() => Math.random() - 0.5);
+      setStudyCards(shuffled);
     }
 
     setView('study');
@@ -90,14 +103,29 @@ export default function App() {
     const card = studyCards[currentCardIndex];
     if (!card) return;
 
+    const now = new Date().getTime();
+    const timeSpentSec = cardStartTime ? Math.round((now - cardStartTime) / 1000) : 0;
+
     await rateCard(card.id, rating);
+
+    if (timeSpentSec > 0) {
+      const minutes = Math.max(1, Math.round(timeSpentSec / 60));
+      await incrementStatistics(user.id, 'time_spent_minutes', minutes);
+    }
+
+    setCardsRated(prev => prev + 1);
+    setCardStartTime(now);
 
     if (currentCardIndex < studyCards.length - 1) {
       setCurrentCardIndex(currentCardIndex + 1);
     } else {
-      setView('dashboard');
+      if (studyStartTime) {
+        setStudyDuration(Math.round((now - studyStartTime) / 60000));
+      }
     }
   };
+
+  const isStudyComplete = cardsRated >= studyCards.length && studyCards.length > 0 && currentCardIndex >= studyCards.length - 1;
 
   if (loading || decksLoading) {
     return (
@@ -183,7 +211,7 @@ export default function App() {
           {/* DASHBOARD VIEW */}
           {view === 'dashboard' && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-10">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
                 <div>
                   <h1 className="text-4xl font-black text-foreground tracking-tight">Мои колоды</h1>
                   <p className="text-muted-foreground font-medium mt-1">Выберите колоду для начала обучения</p>
@@ -196,13 +224,47 @@ export default function App() {
                   Создать колоду
                 </Button>
               </div>
+
+              {(() => {
+                const totalDue = Object.values(deckProgress).reduce((sum, p) => sum + p.dueToday, 0);
+                return totalDue > 0 && (
+                  <Card className="mb-8 border-primary/30 bg-primary/5">
+                    <CardContent className="py-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <RefreshCw size={20} className="text-primary animate-pulse" />
+                        <span className="font-bold text-foreground">
+                          {totalDue} {totalDue === 1 ? 'карточка' : totalDue < 5 ? 'карточки' : 'карточек'} на повторение!
+                        </span>
+                      </div>
+                      <span className="text-sm text-muted-foreground font-medium">Нажмите ⟳ на колоде</span>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
+              {decks?.length > 3 && (
+                <div className="mb-6">
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Поиск по колодам..."
+                    className="h-11 rounded-xl max-w-sm"
+                  />
+                </div>
+              )}
               
-              {decks?.length > 0 ? (
+              {(() => {
+                const filtered = searchQuery
+                  ? decks.filter(d => d.title.toLowerCase().includes(searchQuery.toLowerCase()))
+                  : decks;
+
+                return filtered?.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                  {decks.map(deck => (
+                  {filtered.map(deck => (
                     <DeckCard
                       key={deck.id}
                       deck={deck}
+                      progress={deckProgress[deck.id]}
                       onStudy={() => startStudy(deck.id, 'all')}
                       onReview={() => startStudy(deck.id, 'review')}
                       onManage={() => { setActiveDeckId(deck.id); setView('manage'); }}
@@ -214,15 +276,25 @@ export default function App() {
                 <Card className="text-center py-16">
                   <CardContent>
                     <Layers size={64} className="mx-auto text-muted-foreground/30 mb-6" />
-                    <h3 className="text-xl font-black text-foreground mb-2">Нет колод</h3>
-                    <p className="text-muted-foreground font-medium mb-6">Создайте первую колоду, чтобы начать обучение</p>
-                    <Button onClick={() => setIsModalOpen(true)} className="bg-primary-gradient text-primary-foreground">
-                      <Plus size={18} className="mr-2" />
-                      Создать колоду
-                    </Button>
+                    {searchQuery ? (
+                      <>
+                        <h3 className="text-xl font-black text-foreground mb-2">Ничего не найдено</h3>
+                        <p className="text-muted-foreground font-medium">Попробуйте другой запрос</p>
+                      </>
+                    ) : (
+                      <>
+                        <h3 className="text-xl font-black text-foreground mb-2">Нет колод</h3>
+                        <p className="text-muted-foreground font-medium mb-6">Создайте первую колоду, чтобы начать обучение</p>
+                        <Button onClick={() => setIsModalOpen(true)} className="bg-primary-gradient text-primary-foreground">
+                          <Plus size={18} className="mr-2" />
+                          Создать колоду
+                        </Button>
+                      </>
+                    )}
                   </CardContent>
                 </Card>
-              )}
+              );
+              })()}
             </div>
           )}
 
@@ -249,14 +321,35 @@ export default function App() {
                   <Card className="shadow-sm">
                     <CardContent className="px-6 py-3">
                       <span className="text-sm font-black text-muted-foreground uppercase tracking-widest">
-                        {currentCardIndex + 1} / {studyCards.length}
+                        {Math.min(currentCardIndex + 1, studyCards.length)} / {studyCards.length}
                       </span>
                     </CardContent>
                   </Card>
                 </div>
               </div>
               
-              {studyCards.length > 0 && studyCards[currentCardIndex] ? (
+              {isStudyComplete ? (
+                <Card className="w-full max-w-md text-center">
+                  <CardContent className="py-16">
+                    <div className="text-6xl mb-6">🎉</div>
+                    <h2 className="text-2xl font-black text-foreground mb-2">Колода пройдена!</h2>
+                    <p className="text-muted-foreground font-medium mb-6">
+                      Вы оценили {cardsRated} {cardsRated === 1 ? 'карточку' : cardsRated < 5 ? 'карточки' : 'карточек'}
+                    </p>
+                    {studyDuration > 0 && (
+                      <p className="text-sm text-muted-foreground bg-accent rounded-xl p-4 mb-6">
+                        Время: {studyDuration} мин.
+                      </p>
+                    )}
+                    <Button
+                      onClick={() => setView('dashboard')}
+                      className="bg-primary-gradient text-primary-foreground"
+                    >
+                      К колодам
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : studyCards.length > 0 && studyCards[currentCardIndex] ? (
                 <Flashcard
                   key={studyCards[currentCardIndex].id}
                   card={studyCards[currentCardIndex]}

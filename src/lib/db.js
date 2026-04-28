@@ -117,7 +117,7 @@ export async function createInitialDecks(userId) {
 export async function fetchDecks(userId) {
   const { data: decks, error: decksError } = await supabase
     .from('decks')
-    .select('*')
+    .select('*, cards(*)')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
 
@@ -130,24 +130,10 @@ export async function fetchDecks(userId) {
     return [];
   }
 
-  const decksWithCards = await Promise.all(
-    decks.map(async (deck) => {
-      const { data: cards, error: cardsError } = await supabase
-        .from('cards')
-        .select('*')
-        .eq('deck_id', deck.id)
-        .order('id', { ascending: true });
-
-      if (cardsError) {
-        console.error('Error fetching cards:', cardsError);
-        return { ...deck, cards: [] };
-      }
-
-      return { ...deck, cards: cards || [] };
-    })
-  );
-
-  return decksWithCards;
+  return decks.map(deck => ({
+    ...deck,
+    cards: deck.cards || []
+  }));
 }
 
 export async function createDeck(userId, title, description = '') {
@@ -353,7 +339,7 @@ export async function fetchDueCards(deckId) {
   });
 }
 
-export async function incrementStatistics(userId, field) {
+export async function incrementStatistics(userId, field, amount = 1) {
   const today = new Date().toISOString().split('T')[0];
 
   const { data: existing } = await supabase
@@ -365,7 +351,7 @@ export async function incrementStatistics(userId, field) {
 
   if (existing) {
     const update = {};
-    update[field] = existing[field] + 1;
+    update[field] = existing[field] + amount;
 
     const { error } = await supabase
       .from('statistics')
@@ -383,7 +369,7 @@ export async function incrementStatistics(userId, field) {
     cards_reviewed: 0,
     time_spent_minutes: 0
   };
-  insert[field] = 1;
+  insert[field] = amount;
 
   const { error } = await supabase
     .from('statistics')
@@ -429,9 +415,21 @@ export async function fetchStatistics(userId, days = 30) {
 }
 
 export async function fetchProgressStats(userId) {
+  const { data: decksData } = await supabase
+    .from('decks')
+    .select('id')
+    .eq('user_id', userId);
+
+  const deckIds = decksData?.map(d => d.id) || [];
+
+  const { data: cardsData } = await supabase
+    .from('cards')
+    .select('id')
+    .in('deck_id', deckIds);
+
   const { data: progressData, error } = await supabase
     .from('progress')
-    .select('ease_factor, repetitions, next_review')
+    .select('card_id, ease_factor, repetitions, next_review')
     .eq('user_id', userId);
 
   if (error) {
@@ -439,12 +437,23 @@ export async function fetchProgressStats(userId) {
     return { total: 0, learned: 0, dueToday: 0, avgEase: 0 };
   }
 
+  const total = cardsData?.length || 0;
+  const progressMap = {};
+  if (progressData) {
+    for (const p of progressData) {
+      progressMap[p.card_id] = p;
+    }
+  }
+
   const now = new Date().toISOString();
-  const total = progressData?.length || 0;
-  const learned = progressData?.filter(p => p.repetitions >= 2).length || 0;
-  const dueToday = progressData?.filter(p => p.next_review <= now).length || 0;
-  const avgEase = total > 0
-    ? progressData.reduce((sum, p) => sum + p.ease_factor, 0) / total
+  const learned = cardsData?.filter(c => progressMap[c.id]?.repetitions >= 2).length || 0;
+  const dueToday = cardsData?.filter(c => {
+    const p = progressMap[c.id];
+    if (!p) return true;
+    return p.next_review <= now;
+  }).length || 0;
+  const avgEase = progressData?.length > 0
+    ? progressData.reduce((sum, p) => sum + p.ease_factor, 0) / progressData.length
     : 0;
 
   return { total, learned, dueToday, avgEase };
@@ -542,6 +551,56 @@ export async function fetchAchievements(userId) {
     current: values[a.category],
     progress: Math.min(100, Math.round((values[a.category] / a.threshold) * 100))
   }));
+}
+
+export async function fetchAllDecksProgress(userId) {
+  const { data: decksData } = await supabase
+    .from('decks')
+    .select('id')
+    .eq('user_id', userId);
+
+  if (!decksData || decksData.length === 0) return {};
+
+  const deckIds = decksData.map(d => d.id);
+
+  const { data: cardsData } = await supabase
+    .from('cards')
+    .select('id, deck_id')
+    .in('deck_id', deckIds);
+
+  const { data: progressData } = await supabase
+    .from('progress')
+    .select('card_id, repetitions, next_review')
+    .eq('user_id', userId);
+
+  const now = new Date().toISOString();
+  const progressMap = {};
+  if (progressData) {
+    for (const p of progressData) {
+      progressMap[p.card_id] = p;
+    }
+  }
+
+  const result = {};
+  for (const deck of decksData) {
+    const deckCards = cardsData?.filter(c => c.deck_id === deck.id) || [];
+    const total = deckCards.length;
+    const learned = deckCards.filter(c => progressMap[c.id]?.repetitions >= 2).length;
+    const dueToday = deckCards.filter(c => {
+      const p = progressMap[c.id];
+      if (!p) return true;
+      return p.next_review <= now;
+    }).length;
+
+    result[deck.id] = {
+      total,
+      learned,
+      dueToday,
+      percent: total > 0 ? Math.round((learned / total) * 100) : 0
+    };
+  }
+
+  return result;
 }
 
 function calculateStreakFromStats(stats) {
